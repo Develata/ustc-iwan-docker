@@ -1,4 +1,4 @@
-name: Build and publish image
+name: Build stable wrapper image
 
 on:
   workflow_dispatch:
@@ -8,17 +8,22 @@ on:
     paths:
       - Dockerfile
       - entrypoint.sh
-      - UPSTREAM_VERSION
-      - UPSTREAM_SHA256S
+      - compose.yaml
+      - .env.example
+      - README.md
       - .github/workflows/build.yml
+      - .github/workflows/check-release.yml
 
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-stable-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  UPSTREAM_REPO: yyy1mu/ustc-iwan
 
 jobs:
   build:
@@ -26,14 +31,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read pinned upstream version
-        id: version
+      - name: Read latest stable upstream release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          version="$(tr -d '[:space:]' < UPSTREAM_VERSION)"
-          [[ -n "$version" ]]
+          json="$(gh api "repos/${UPSTREAM_REPO}/releases/latest")"
+          version="$(jq -r '.tag_name' <<<"$json")"
+          draft="$(jq -r '.draft' <<<"$json")"
+          prerelease="$(jq -r '.prerelease' <<<"$json")"
+
+          if [[ -z "$version" || "$version" == "null" || "$draft" != "false" || "$prerelease" != "false" ]]; then
+            echo "Latest GitHub release is not a usable stable release." >&2
+            exit 1
+          fi
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Latest stable upstream release: $version"
+
+      - name: Download required upstream assets and calculate SHA-256
+        id: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ steps.release.outputs.version }}'
+          mkdir -p .upstream-assets
+
+          for asset in \
+            iwan-client-oidc-x86_64-musl \
+            iwan-client-oidc-aarch64-musl
+          do
+            gh release download "$version" \
+              --repo "$UPSTREAM_REPO" \
+              --pattern "$asset" \
+              --dir .upstream-assets
+          done
+
+          sha_amd64="$(sha256sum .upstream-assets/iwan-client-oidc-x86_64-musl | awk '{print $1}')"
+          sha_arm64="$(sha256sum .upstream-assets/iwan-client-oidc-aarch64-musl | awk '{print $1}')"
+
+          echo "sha_amd64=$sha_amd64" >> "$GITHUB_OUTPUT"
+          echo "sha_arm64=$sha_arm64" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -48,22 +90,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push amd64/arm64 image
+      - name: Build and publish stable
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            IWAN_VERSION=${{ steps.version.outputs.version }}
-          tags: |
-            ghcr.io/develata/ustc-iwan-docker:${{ steps.version.outputs.version }}
-            ghcr.io/develata/ustc-iwan-docker:stable
+            IWAN_VERSION=${{ steps.release.outputs.version }}
+            IWAN_SHA256_AMD64=${{ steps.assets.outputs.sha_amd64 }}
+            IWAN_SHA256_ARM64=${{ steps.assets.outputs.sha_arm64 }}
+          tags: ghcr.io/develata/ustc-iwan-docker:stable
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=Unofficial Docker wrapper for yyy1mu/ustc-iwan native SOCKS5 mode
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
             io.develata.ustc-iwan.upstream=https://github.com/yyy1mu/ustc-iwan
-            io.develata.ustc-iwan.upstream-version=${{ steps.version.outputs.version }}
+            io.develata.ustc-iwan.upstream-version=${{ steps.release.outputs.version }}
+            io.develata.ustc-iwan.sha256-amd64=${{ steps.assets.outputs.sha_amd64 }}
+            io.develata.ustc-iwan.sha256-arm64=${{ steps.assets.outputs.sha_arm64 }}
+            io.develata.wrapper-revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
