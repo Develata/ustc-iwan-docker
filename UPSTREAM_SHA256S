@@ -1,0 +1,4 @@
+# Populated automatically by .github/workflows/check-release.yml.
+# Format: <sha256>  <release-asset-name>
+# The initial v2.2.0 pin is allowed to bootstrap without a checksum; the next
+# scheduled/manual release check will fill this file via a reviewable PR.
