@@ -7,6 +7,17 @@
 > [!IMPORTANT]
 > 本项目不是中国科学技术大学、Panabit 或上游 `ustc-iwan` 项目的官方发行物。请仅在你有权访问的 USTC/iWAN 网络与服务中使用。
 
+## AI 生成声明
+
+> [!NOTE]
+> **除引用和调用的上游项目/Release 产物外，本仓库的原创内容完全由 AI 自主构造。**
+>
+> 本仓库中的 Docker 架构、`Dockerfile`、`entrypoint.sh`、Compose 配置、GitHub Actions 工作流、Release 跟踪机制、健康检查与自动重连逻辑、文档，以及后续调试修复，均由 **OpenAI ChatGPT** 根据仓库所有者给出的目标、约束和授权，自主完成设计、实现、修改并直接写入 GitHub 仓库。
+>
+> 仓库所有者负责创建 GitHub repository、提出需求和作出高层方案选择，但未手工编写本仓库上述实现内容。因此，本仓库应被视为 **AI-generated / AI-maintained software**；使用者应像审查其他自动生成代码一样，自行审查其正确性、安全性和适用性。
+>
+> 此声明**不适用于**上游 [`yyy1mu/ustc-iwan`](https://github.com/yyy1mu/ustc-iwan) 的源码或 Release 产物。本仓库不声称这些上游内容由 AI 生成，也不改变其作者、贡献者或权利归属。
+
 ## 上游与致谢
 
 核心 iWAN / OIDC / SOCKS5 实现来自：
