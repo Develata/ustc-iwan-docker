@@ -26,14 +26,33 @@ asset_name() {
     esac
 }
 
+expected_sha256() {
+    case "$(uname -m)" in
+        x86_64)  echo "${IWAN_SHA256_AMD64:-}" ;;
+        aarch64) echo "${IWAN_SHA256_ARM64:-}" ;;
+        *) echo "" ;;
+    esac
+}
+
 download_iwan() {
     [ -n "${IWAN_VERSION:-}" ] || {
         echo "IWAN_VERSION is empty; image was built incorrectly" >&2
         exit 2
     }
 
+    expected="$(expected_sha256)"
+    [ -n "$expected" ] || {
+        echo "upstream SHA-256 is missing for $(uname -m); image was built incorrectly" >&2
+        exit 2
+    }
+
     if [ -x "$BIN" ]; then
-        return 0
+        actual="$(sha256sum "$BIN" | awk '{print $1}')"
+        if [ "$actual" = "$expected" ]; then
+            return 0
+        fi
+        echo "cached upstream binary checksum mismatch; redownloading" >&2
+        rm -f "$BIN"
     fi
 
     asset="$(asset_name)"
@@ -44,18 +63,13 @@ download_iwan() {
     rm -f "$tmp"
     curl -fL --retry 3 --retry-delay 2 "$url" -o "$tmp"
 
-    expected="$(awk -v a="$asset" '$2 == a {print $1; exit}' /usr/local/share/ustc-iwan/UPSTREAM_SHA256S 2>/dev/null || true)"
-    if [ -n "$expected" ]; then
-        actual="$(sha256sum "$tmp" | awk '{print $1}')"
-        if [ "$actual" != "$expected" ]; then
-            echo "SHA-256 mismatch for ${asset}: expected ${expected}, got ${actual}" >&2
-            rm -f "$tmp"
-            exit 3
-        fi
-        echo "Verified SHA-256: ${actual}" >&2
-    else
-        echo "WARNING: no pinned SHA-256 is available for ${asset}; download is not checksum-pinned." >&2
+    actual="$(sha256sum "$tmp" | awk '{print $1}')"
+    if [ "$actual" != "$expected" ]; then
+        echo "SHA-256 mismatch for ${asset}: expected ${expected}, got ${actual}" >&2
+        rm -f "$tmp"
+        exit 3
     fi
+    echo "Verified SHA-256: ${actual}" >&2
 
     chmod 0755 "$tmp"
     mv "$tmp" "$BIN"
