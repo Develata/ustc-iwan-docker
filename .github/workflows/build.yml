@@ -33,12 +33,10 @@ jobs:
 
       - name: Read latest stable upstream release
         id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          json="$(gh api "repos/${UPSTREAM_REPO}/releases/latest")"
+          json="$(curl -fsSL --retry 3 "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest")"
           version="$(jq -r '.tag_name' <<<"$json")"
           draft="$(jq -r '.draft' <<<"$json")"
           prerelease="$(jq -r '.prerelease' <<<"$json")"
@@ -53,26 +51,28 @@ jobs:
 
       - name: Download required upstream assets and calculate SHA-256
         id: assets
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           version='${{ steps.release.outputs.version }}'
-          mkdir -p .upstream-assets
+          mkdir -p .upstream-assets/amd64 .upstream-assets/arm64
 
-          for asset in \
-            iwan-client-oidc-x86_64-musl \
-            iwan-client-oidc-aarch64-musl
-          do
-            gh release download "$version" \
-              --repo "$UPSTREAM_REPO" \
-              --pattern "$asset" \
-              --dir .upstream-assets
-          done
+          base="https://github.com/${UPSTREAM_REPO}/releases/download/${version}"
+          curl -fL --retry 3 --retry-delay 2 \
+            "${base}/iwan-client-oidc-x86_64-musl.zip" \
+            -o .upstream-assets/amd64.zip
+          curl -fL --retry 3 --retry-delay 2 \
+            "${base}/iwan-client-oidc-aarch64-musl.zip" \
+            -o .upstream-assets/arm64.zip
 
-          sha_amd64="$(sha256sum .upstream-assets/iwan-client-oidc-x86_64-musl | awk '{print $1}')"
-          sha_arm64="$(sha256sum .upstream-assets/iwan-client-oidc-aarch64-musl | awk '{print $1}')"
+          unzip -q .upstream-assets/amd64.zip -d .upstream-assets/amd64
+          unzip -q .upstream-assets/arm64.zip -d .upstream-assets/arm64
+
+          test -f .upstream-assets/amd64/iwan-client-oidc-x86_64-musl
+          test -f .upstream-assets/arm64/iwan-client-oidc-aarch64-musl
+
+          sha_amd64="$(sha256sum .upstream-assets/amd64/iwan-client-oidc-x86_64-musl | awk '{print $1}')"
+          sha_arm64="$(sha256sum .upstream-assets/arm64/iwan-client-oidc-aarch64-musl | awk '{print $1}')"
 
           echo "sha_amd64=$sha_amd64" >> "$GITHUB_OUTPUT"
           echo "sha_arm64=$sha_arm64" >> "$GITHUB_OUTPUT"
