@@ -1,150 +1,128 @@
-name: Check upstream release
+name: Publish upstream stable release
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - UPSTREAM_VERSION
-      - UPSTREAM_SHA256S
-      - .github/workflows/check-release.yml
   schedule:
     # GitHub cron uses day-of-month semantics. This is approximately every
     # five days; month boundaries can make one interval shorter or longer.
     - cron: "17 4 */5 * *"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  packages: write
 
 concurrency:
-  group: check-upstream-release
+  group: publish-upstream-stable-release
   cancel-in-progress: false
 
+env:
+  UPSTREAM_REPO: yyy1mu/ustc-iwan
+  IMAGE: ghcr.io/develata/ustc-iwan-docker
+
 jobs:
-  check:
+  publish:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
-      UPSTREAM_REPO: yyy1mu/ustc-iwan
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Read latest stable release
+      - name: Read latest stable upstream release
         id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           json="$(gh api "repos/${UPSTREAM_REPO}/releases/latest")"
-          latest="$(jq -r '.tag_name' <<<"$json")"
+          version="$(jq -r '.tag_name' <<<"$json")"
           draft="$(jq -r '.draft' <<<"$json")"
           prerelease="$(jq -r '.prerelease' <<<"$json")"
 
-          if [[ -z "$latest" || "$latest" == "null" || "$draft" != "false" || "$prerelease" != "false" ]]; then
+          if [[ -z "$version" || "$version" == "null" || "$draft" != "false" || "$prerelease" != "false" ]]; then
             echo "Latest GitHub release is not a usable stable release." >&2
             exit 1
           fi
 
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
-          echo "Latest stable upstream release: $latest"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Latest stable upstream release: $version"
 
-      - name: Download required release assets and calculate checksums
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check whether immutable version tag already exists
+        id: exists
         shell: bash
         run: |
           set -euo pipefail
-          latest='${{ steps.release.outputs.latest }}'
+          version='${{ steps.release.outputs.version }}'
+          if docker buildx imagetools inspect "${IMAGE}:${version}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "${IMAGE}:${version} already exists; no upstream release publish is needed."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download required upstream assets and calculate SHA-256
+        if: steps.exists.outputs.exists != 'true'
+        id: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ steps.release.outputs.version }}'
           mkdir -p .upstream-assets
 
           for asset in \
             iwan-client-oidc-x86_64-musl \
             iwan-client-oidc-aarch64-musl
           do
-            gh release download "$latest" \
+            gh release download "$version" \
               --repo "$UPSTREAM_REPO" \
               --pattern "$asset" \
               --dir .upstream-assets
           done
 
-          (
-            cd .upstream-assets
-            sha256sum \
-              iwan-client-oidc-x86_64-musl \
-              iwan-client-oidc-aarch64-musl
-          ) > /tmp/upstream-sha256s
+          sha_amd64="$(sha256sum .upstream-assets/iwan-client-oidc-x86_64-musl | awk '{print $1}')"
+          sha_arm64="$(sha256sum .upstream-assets/iwan-client-oidc-aarch64-musl | awk '{print $1}')"
 
-          cat /tmp/upstream-sha256s
+          echo "sha_amd64=$sha_amd64" >> "$GITHUB_OUTPUT"
+          echo "sha_arm64=$sha_arm64" >> "$GITHUB_OUTPUT"
+          echo "amd64 SHA-256: $sha_amd64"
+          echo "arm64 SHA-256: $sha_arm64"
 
-      - name: Determine whether an update PR is needed
-        id: diff
-        shell: bash
-        run: |
-          set -euo pipefail
-          latest='${{ steps.release.outputs.latest }}'
-          current="$(tr -d '[:space:]' < UPSTREAM_VERSION)"
+      - name: Set up QEMU
+        if: steps.exists.outputs.exists != 'true'
+        uses: docker/setup-qemu-action@v3
 
-          checksum_complete=true
-          for asset in iwan-client-oidc-x86_64-musl iwan-client-oidc-aarch64-musl; do
-            if ! grep -Eq "^[0-9a-f]{64}[[:space:]]+${asset}$" UPSTREAM_SHA256S; then
-              checksum_complete=false
-            fi
-          done
+      - name: Set up Docker Buildx
+        if: steps.exists.outputs.exists != 'true'
+        uses: docker/setup-buildx-action@v3
 
-          if [[ "$latest" == "$current" && "$checksum_complete" == "true" ]]; then
-            echo "needed=false" >> "$GITHUB_OUTPUT"
-            echo "Already tracking ${current} with complete checksums."
-          else
-            echo "needed=true" >> "$GITHUB_OUTPUT"
-            echo "current=$current" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Prepare update branch
-        if: steps.diff.outputs.needed == 'true'
-        id: branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          latest='${{ steps.release.outputs.latest }}'
-          branch="bot/update-ustc-iwan-${latest//\//-}"
-
-          printf '%s\n' "$latest" > UPSTREAM_VERSION
-          {
-            echo '# SHA-256 values for the upstream GitHub Release assets pinned by UPSTREAM_VERSION.'
-            echo '# Generated by .github/workflows/check-release.yml.'
-            cat /tmp/upstream-sha256s
-          } > UPSTREAM_SHA256S
-
-          # Keep the repository's example deployment pinned to the reviewed release.
-          sed -i -E "s#IWAN_IMAGE_TAG=v[^[:space:]]+#IWAN_IMAGE_TAG=${latest}#" .env.example
-          sed -i -E "s#\$\{IWAN_IMAGE_TAG:-v[^}]+\}#\$\{IWAN_IMAGE_TAG:-${latest}\}#" compose.yaml
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$branch"
-          git add UPSTREAM_VERSION UPSTREAM_SHA256S .env.example compose.yaml
-          git commit -m "chore: update ustc-iwan to ${latest}"
-          git push --force-with-lease origin "HEAD:${branch}"
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
-
-      - name: Open pull request
-        if: steps.diff.outputs.needed == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          latest='${{ steps.release.outputs.latest }}'
-          current='${{ steps.diff.outputs.current }}'
-          branch='${{ steps.branch.outputs.branch }}'
-
-          existing="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
-          if [[ -n "$existing" ]]; then
-            echo "Update PR already exists: #${existing}"
-            exit 0
-          fi
-
-          gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "chore: update ustc-iwan to ${latest}" \
-            --body "Automated upstream stable Release update.\n\n- Previous pin: \`${current}\`\n- New pin: \`${latest}\`\n- Source: https://github.com/${UPSTREAM_REPO}/releases/tag/${latest}\n- Required amd64/arm64 assets were downloaded successfully.\n- SHA-256 values are recorded in \`UPSTREAM_SHA256S\`.\n\nThis PR is intentionally **not** auto-merged. Review the upstream release notes and merge manually when ready."
+      - name: Build and publish immutable version plus stable
+        if: steps.exists.outputs.exists != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            IWAN_VERSION=${{ steps.release.outputs.version }}
+            IWAN_SHA256_AMD64=${{ steps.assets.outputs.sha_amd64 }}
+            IWAN_SHA256_ARM64=${{ steps.assets.outputs.sha_arm64 }}
+          tags: |
+            ghcr.io/develata/ustc-iwan-docker:${{ steps.release.outputs.version }}
+            ghcr.io/develata/ustc-iwan-docker:stable
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=Unofficial Docker wrapper for yyy1mu/ustc-iwan native SOCKS5 mode
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            io.develata.ustc-iwan.upstream=https://github.com/yyy1mu/ustc-iwan
+            io.develata.ustc-iwan.upstream-version=${{ steps.release.outputs.version }}
+            io.develata.ustc-iwan.sha256-amd64=${{ steps.assets.outputs.sha_amd64 }}
+            io.develata.ustc-iwan.sha256-arm64=${{ steps.assets.outputs.sha_arm64 }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
