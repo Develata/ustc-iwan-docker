@@ -1,0 +1,25 @@
+services:
+  iwan:
+    image: ghcr.io/develata/ustc-iwan-docker:${IWAN_IMAGE_TAG:-v2.2.0}
+    container_name: ustc-iwan
+    restart: unless-stopped
+    init: true
+    environment:
+      IWAN_SERVER_INDEX: "${IWAN_SERVER_INDEX:-1}"
+      IWAN_SOCKS_LISTEN: "0.0.0.0:1080"
+      IWAN_SOCKS_MTU: "${IWAN_SOCKS_MTU:-1380}"
+      IWAN_HEALTHCHECK_URL: "${IWAN_HEALTHCHECK_URL:-https://api.llm.ustc.edu.cn/}"
+      IWAN_HEALTHCHECK_TIMEOUT: "${IWAN_HEALTHCHECK_TIMEOUT:-10}"
+      IWAN_WATCHDOG_INTERVAL: "${IWAN_WATCHDOG_INTERVAL:-30}"
+      IWAN_WATCHDOG_FAILURES: "${IWAN_WATCHDOG_FAILURES:-4}"
+      IWAN_STARTUP_GRACE: "${IWAN_STARTUP_GRACE:-20}"
+    ports:
+      - "127.0.0.1:${IWAN_HOST_PORT:-1080}:1080"
+    volumes:
+      - ./data/iwan:/config
+    networks:
+      - ustc-iwan-proxy
+
+networks:
+  ustc-iwan-proxy:
+    name: ustc-iwan-proxy
