@@ -1,12 +1,19 @@
 FROM alpine:3.22
 
 ARG IWAN_VERSION
-ENV IWAN_VERSION=${IWAN_VERSION}
+ARG IWAN_SHA256_AMD64
+ARG IWAN_SHA256_ARM64
 
-RUN apk add --no-cache ca-certificates curl tini
+ENV IWAN_VERSION=${IWAN_VERSION} \
+    IWAN_SHA256_AMD64=${IWAN_SHA256_AMD64} \
+    IWAN_SHA256_ARM64=${IWAN_SHA256_ARM64}
+
+RUN test -n "$IWAN_VERSION" \
+    && test -n "$IWAN_SHA256_AMD64" \
+    && test -n "$IWAN_SHA256_ARM64" \
+    && apk add --no-cache ca-certificates curl tini
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY UPSTREAM_SHA256S /usr/local/share/ustc-iwan/UPSTREAM_SHA256S
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \
     && mkdir -p /config/bin
