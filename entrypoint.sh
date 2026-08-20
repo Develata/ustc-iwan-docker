@@ -59,11 +59,16 @@ download_iwan() {
     archive="${asset}.zip"
     url="https://github.com/yyy1mu/ustc-iwan/releases/download/${IWAN_VERSION}/${archive}"
     tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' RETURN 2>/dev/null || true
 
     echo "Downloading upstream ${archive} (${IWAN_VERSION})..." >&2
-    curl -fL --retry 3 --retry-delay 2 "$url" -o "${tmpdir}/${archive}"
-    unzip -q "${tmpdir}/${archive}" -d "$tmpdir"
+    if ! curl -fL --retry 3 --retry-delay 2 "$url" -o "${tmpdir}/${archive}"; then
+        rm -rf "$tmpdir"
+        exit 3
+    fi
+    if ! unzip -q "${tmpdir}/${archive}" -d "$tmpdir"; then
+        rm -rf "$tmpdir"
+        exit 3
+    fi
 
     extracted="${tmpdir}/${asset}"
     if [ ! -f "$extracted" ]; then
