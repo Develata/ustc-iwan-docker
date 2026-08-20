@@ -1,6 +1,6 @@
 services:
   iwan:
-    image: ghcr.io/develata/ustc-iwan-docker:${IWAN_IMAGE_TAG:-v2.2.0}
+    image: ghcr.io/develata/ustc-iwan-docker:${IWAN_IMAGE_TAG:-stable}
     container_name: ustc-iwan
     restart: unless-stopped
     init: true
