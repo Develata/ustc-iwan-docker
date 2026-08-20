@@ -56,23 +56,33 @@ download_iwan() {
     fi
 
     asset="$(asset_name)"
-    url="https://github.com/yyy1mu/ustc-iwan/releases/download/${IWAN_VERSION}/${asset}"
-    tmp="${BIN}.tmp"
+    archive="${asset}.zip"
+    url="https://github.com/yyy1mu/ustc-iwan/releases/download/${IWAN_VERSION}/${archive}"
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' RETURN 2>/dev/null || true
 
-    echo "Downloading upstream ${asset} (${IWAN_VERSION})..." >&2
-    rm -f "$tmp"
-    curl -fL --retry 3 --retry-delay 2 "$url" -o "$tmp"
+    echo "Downloading upstream ${archive} (${IWAN_VERSION})..." >&2
+    curl -fL --retry 3 --retry-delay 2 "$url" -o "${tmpdir}/${archive}"
+    unzip -q "${tmpdir}/${archive}" -d "$tmpdir"
 
-    actual="$(sha256sum "$tmp" | awk '{print $1}')"
+    extracted="${tmpdir}/${asset}"
+    if [ ! -f "$extracted" ]; then
+        echo "archive ${archive} did not contain expected binary ${asset}" >&2
+        rm -rf "$tmpdir"
+        exit 3
+    fi
+
+    actual="$(sha256sum "$extracted" | awk '{print $1}')"
     if [ "$actual" != "$expected" ]; then
         echo "SHA-256 mismatch for ${asset}: expected ${expected}, got ${actual}" >&2
-        rm -f "$tmp"
+        rm -rf "$tmpdir"
         exit 3
     fi
     echo "Verified SHA-256: ${actual}" >&2
 
-    chmod 0755 "$tmp"
-    mv "$tmp" "$BIN"
+    chmod 0755 "$extracted"
+    mv "$extracted" "$BIN"
+    rm -rf "$tmpdir"
 }
 
 run_fetch() {
