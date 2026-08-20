@@ -11,7 +11,7 @@ ENV IWAN_VERSION=${IWAN_VERSION} \
 RUN test -n "$IWAN_VERSION" \
     && test -n "$IWAN_SHA256_AMD64" \
     && test -n "$IWAN_SHA256_ARM64" \
-    && apk add --no-cache ca-certificates curl tini
+    && apk add --no-cache ca-certificates curl tini unzip
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
