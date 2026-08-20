@@ -15,7 +15,7 @@ VOLUME ["/config"]
 EXPOSE 1080
 
 HEALTHCHECK --interval=60s --timeout=12s --start-period=30s --retries=2 \
-  CMD curl -sS --max-time 8 --socks5-hostname 127.0.0.1:1080 "$${IWAN_HEALTHCHECK_URL:-https://api.llm.ustc.edu.cn/}" -o /dev/null || exit 1
+  CMD curl -sS --max-time 8 --socks5-hostname 127.0.0.1:1080 "${IWAN_HEALTHCHECK_URL:-https://api.llm.ustc.edu.cn/}" -o /dev/null || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["run"]
