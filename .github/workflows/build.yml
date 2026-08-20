@@ -57,8 +57,8 @@ jobs:
           build-args: |
             IWAN_VERSION=${{ steps.version.outputs.version }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ustc-iwan-docker:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/ustc-iwan-docker:stable
+            ghcr.io/develata/ustc-iwan-docker:${{ steps.version.outputs.version }}
+            ghcr.io/develata/ustc-iwan-docker:stable
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=Unofficial Docker wrapper for yyy1mu/ustc-iwan native SOCKS5 mode
