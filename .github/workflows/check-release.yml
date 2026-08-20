@@ -2,6 +2,13 @@ name: Check upstream release
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - UPSTREAM_VERSION
+      - UPSTREAM_SHA256S
+      - .github/workflows/check-release.yml
   schedule:
     # GitHub cron uses day-of-month semantics. This is approximately every
     # five days; month boundaries can make one interval shorter or longer.
@@ -45,7 +52,6 @@ jobs:
           echo "Latest stable upstream release: $latest"
 
       - name: Download required release assets and calculate checksums
-        id: assets
         shell: bash
         run: |
           set -euo pipefail
