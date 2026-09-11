@@ -17,8 +17,8 @@ mkdir -p "$BIN_DIR"
 
 asset_name() {
     case "$(uname -m)" in
-        x86_64)  echo "iwan-client-oidc-x86_64-musl" ;;
-        aarch64) echo "iwan-client-oidc-aarch64-musl" ;;
+        x86_64)  echo "iwan-client-oidc-linux-x86_64-musl" ;;
+        aarch64) echo "iwan-client-oidc-linux-aarch64-musl" ;;
         *)
             echo "unsupported architecture: $(uname -m)" >&2
             exit 2

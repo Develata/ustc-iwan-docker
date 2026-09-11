@@ -253,6 +253,18 @@ Dockerfile、entrypoint、workflow 等 wrapper 文件发生变化时，`Build st
 
 已经存在的版本化 `:vX.Y.Z` 不会因此被覆盖。
 
+## 发布验证
+
+当前上游（v26.9.0 起）的 Linux musl 附件及压缩包内二进制采用
+`iwan-client-oidc-linux-{x86_64,aarch64}-musl` 命名。两个 workflow 与
+容器首次启动的下载路径必须同步；旧版本的已发布镜像保持不变。
+
+两个 workflow 都运行离线回归测试（`python3 -m unittest discover -s tests -v`），
+覆盖双架构下载命名、缓存复用、校验失败与错误压缩包内容。发布后还会按本次
+构建的 digest 从 GHCR 拉取 amd64/arm64 镜像，实际验证首次下载、SHA-256、
+`--version` 和 wrapper 依赖的 CLI 选项；arm64 使用 QEMU。这不替代需要真实
+校园网凭据的认证和 SOCKS 数据面测试。
+
 ## 手动触发发布检查
 
 需要立即检查上游而不等待约 5 天时，可以进入 GitHub 仓库的 **Actions → Publish upstream stable release → Run workflow** 手动触发。

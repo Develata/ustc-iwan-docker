@@ -25,6 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test entrypoint downloads and checksum enforcement
+        run: python3 -m unittest discover -s tests -v
+
       - name: Read latest stable upstream release
         id: release
         shell: bash
@@ -74,20 +77,20 @@ jobs:
 
           base="https://github.com/${UPSTREAM_REPO}/releases/download/${version}"
           curl -fL --retry 3 --retry-delay 2 \
-            "${base}/iwan-client-oidc-x86_64-musl.zip" \
+            "${base}/iwan-client-oidc-linux-x86_64-musl.zip" \
             -o .upstream-assets/amd64.zip
           curl -fL --retry 3 --retry-delay 2 \
-            "${base}/iwan-client-oidc-aarch64-musl.zip" \
+            "${base}/iwan-client-oidc-linux-aarch64-musl.zip" \
             -o .upstream-assets/arm64.zip
 
           unzip -q .upstream-assets/amd64.zip -d .upstream-assets/amd64
           unzip -q .upstream-assets/arm64.zip -d .upstream-assets/arm64
 
-          test -f .upstream-assets/amd64/iwan-client-oidc-x86_64-musl
-          test -f .upstream-assets/arm64/iwan-client-oidc-aarch64-musl
+          test -f .upstream-assets/amd64/iwan-client-oidc-linux-x86_64-musl
+          test -f .upstream-assets/arm64/iwan-client-oidc-linux-aarch64-musl
 
-          sha_amd64="$(sha256sum .upstream-assets/amd64/iwan-client-oidc-x86_64-musl | awk '{print $1}')"
-          sha_arm64="$(sha256sum .upstream-assets/arm64/iwan-client-oidc-aarch64-musl | awk '{print $1}')"
+          sha_amd64="$(sha256sum .upstream-assets/amd64/iwan-client-oidc-linux-x86_64-musl | awk '{print $1}')"
+          sha_arm64="$(sha256sum .upstream-assets/arm64/iwan-client-oidc-linux-aarch64-musl | awk '{print $1}')"
 
           echo "sha_amd64=$sha_amd64" >> "$GITHUB_OUTPUT"
           echo "sha_arm64=$sha_arm64" >> "$GITHUB_OUTPUT"
@@ -104,6 +107,7 @@ jobs:
 
       - name: Build and publish immutable version plus stable
         if: steps.exists.outputs.exists != 'true'
+        id: image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -126,3 +130,10 @@ jobs:
             io.develata.ustc-iwan.sha256-arm64=${{ steps.assets.outputs.sha_arm64 }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify published image cold start on both architectures
+        if: steps.exists.outputs.exists != 'true'
+        env:
+          PUBLISHED_IMAGE: ghcr.io/develata/ustc-iwan-docker@${{ steps.image.outputs.digest }}
+          UPSTREAM_VERSION: ${{ steps.release.outputs.version }}
+        run: sh scripts/smoke-image.sh "$PUBLISHED_IMAGE" "$UPSTREAM_VERSION"
