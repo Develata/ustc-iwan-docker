@@ -5,14 +5,22 @@ set -eu
 image="${1:?usage: smoke-image.sh IMAGE@DIGEST UPSTREAM_VERSION}"
 version="${2:?upstream version is required}"
 
+index="$(docker buildx imagetools inspect "$image" --raw)"
 for platform in linux/amd64 linux/arm64; do
-    docker pull --platform "$platform" "$image"
-    actual="$(docker run --rm --platform "$platform" "$image" --version)"
+    # Classic Docker image stores cannot associate one index digest with two
+    # local architectures. Pull each exact child manifest instead.
+    digest="$(printf '%s' "$index" | jq -er --arg arch "${platform#linux/}" '
+        [.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest]
+        | if length == 1 then .[0] else error("expected one platform manifest") end
+    ')"
+    platform_image="${image%@*}@${digest}"
+    docker pull --platform "$platform" "$platform_image"
+    actual="$(docker run --rm --platform "$platform" "$platform_image" --version)"
     [ "$actual" = "iwan-client-oidc ${version#v}" ] || {
         printf 'Unexpected %s client version: %s\n' "$platform" "$actual" >&2
         exit 1
     }
-    help="$(docker run --rm --platform "$platform" "$image" --help)"
+    help="$(docker run --rm --platform "$platform" "$platform_image" --help)"
     for flag in --config-dir --fetch --list --connect --socks --socks-listen --socks-mtu; do
         case "$help" in
             *"$flag"*) ;;
