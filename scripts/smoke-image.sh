@@ -4,6 +4,8 @@
 set -eu
 image="${1:?usage: smoke-image.sh IMAGE@DIGEST UPSTREAM_VERSION}"
 version="${2:?upstream version is required}"
+newline='
+'
 
 index="$(docker buildx imagetools inspect "$image" --raw)"
 for platform in linux/amd64 linux/arm64; do
@@ -15,7 +17,11 @@ for platform in linux/amd64 linux/arm64; do
     ')"
     platform_image="${image%@*}@${digest}"
     docker pull --platform "$platform" "$platform_image"
-    actual="$(docker run --rm --platform "$platform" "$platform_image" --version)"
+    # Preserve trailing newlines, then remove at most one normal line ending.
+    # The && keeps a failed version command's exit status unchanged.
+    actual="$(docker run --rm --platform "$platform" "$platform_image" --version && printf '.')"
+    actual="${actual%.}"
+    actual="${actual%"$newline"}"
     # Upstream releases may print the tag with or without its leading v.
     # Match the whole line and exact version; do not accept prefixes/suffixes.
     case "$actual" in
