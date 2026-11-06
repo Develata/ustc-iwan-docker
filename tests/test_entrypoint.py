@@ -93,8 +93,9 @@ cp "$FIXTURE_DIR/asset.zip" "$output"
         self.assertFalse((self.work / 'requests').exists())
 
     def test_workflows_use_new_asset_names_for_both_architectures(self):
-        for path in (ROOT / '.github/workflows').glob('*.yml'):
-            text = path.read_text()
+        # Verification-only workflows do not download release archives.
+        for name in ('build.yml', 'check-release.yml'):
+            text = (ROOT / '.github/workflows' / name).read_text()
             for arch in ('x86_64', 'aarch64'):
                 self.assertIn(f'iwan-client-oidc-linux-{arch}-musl.zip', text)
                 self.assertNotIn(f'iwan-client-oidc-{arch}-musl', text)

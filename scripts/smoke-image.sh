@@ -16,10 +16,15 @@ for platform in linux/amd64 linux/arm64; do
     platform_image="${image%@*}@${digest}"
     docker pull --platform "$platform" "$platform_image"
     actual="$(docker run --rm --platform "$platform" "$platform_image" --version)"
-    [ "$actual" = "iwan-client-oidc ${version#v}" ] || {
-        printf 'Unexpected %s client version: %s\n' "$platform" "$actual" >&2
-        exit 1
-    }
+    # Upstream releases may print the tag with or without its leading v.
+    # Match the whole line and exact version; do not accept prefixes/suffixes.
+    case "$actual" in
+        "iwan-client-oidc ${version#v}"|"iwan-client-oidc v${version#v}") ;;
+        *)
+            printf 'Unexpected %s client version: %s\n' "$platform" "$actual" >&2
+            exit 1
+            ;;
+    esac
     help="$(docker run --rm --platform "$platform" "$platform_image" --help)"
     for flag in --config-dir --fetch --list --connect --socks --socks-listen --socks-mtu; do
         case "$help" in

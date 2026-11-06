@@ -7,10 +7,19 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = '26.11.1'
+PLATFORMS = ('amd64', 'arm64')
+
+
+def platform_manifests():
+    return [dict(platform=dict(os='linux', architecture=arch), digest=f'sha256:{arch}')
+            for arch in PLATFORMS]
 
 
 class ImageSmokeTests(unittest.TestCase):
-    def run_smoke(self, manifests):
+    def run_smoke(self, manifests, versions=None, expected_version=f'v{VERSION}',
+                  version_status=0):
+        versions = versions or {arch: f'iwan-client-oidc {VERSION}' for arch in PLATFORMS}
         with tempfile.TemporaryDirectory() as work:
             tool = Path(work) / 'docker'
             tool.write_text('''#!/bin/sh
@@ -25,13 +34,17 @@ case "$1" in
         esac ;;
     run)
         case "$4:$5" in
-            linux/amd64:example.invalid/iwan@sha256:amd64) ;;
-            linux/arm64:example.invalid/iwan@sha256:arm64) ;;
+            linux/amd64:example.invalid/iwan@sha256:amd64)
+                version="$FIXTURE_AMD64_VERSION" ;;
+            linux/arm64:example.invalid/iwan@sha256:arm64)
+                version="$FIXTURE_ARM64_VERSION" ;;
             *) exit 99 ;;
         esac
         case "$6" in
-            --version) printf 'iwan-client-oidc 26.9.1\n' ;;
-            --help) printf '%s\n' '--config-dir --fetch --list --connect --socks --socks-listen --socks-mtu' ;;
+            --version)
+                printf '%s\\n' "$version"
+                exit "$FIXTURE_VERSION_STATUS" ;;
+            --help) printf '%s\\n' '--config-dir --fetch --list --connect --socks --socks-listen --socks-mtu' ;;
             *) exit 98 ;;
         esac ;;
     *) exit 97 ;;
@@ -39,18 +52,68 @@ esac
 ''')
             tool.chmod(0o755)
             env = dict(os.environ, PATH=f'{work}:{os.environ["PATH"]}',
-                       FIXTURE_INDEX=json.dumps({'manifests': manifests}))
+                       FIXTURE_INDEX=json.dumps({'manifests': manifests}),
+                       FIXTURE_AMD64_VERSION=versions['amd64'],
+                       FIXTURE_ARM64_VERSION=versions['arm64'],
+                       FIXTURE_VERSION_STATUS=str(version_status))
             return subprocess.run(['sh', str(ROOT / 'scripts/smoke-image.sh'),
-                                   'example.invalid/iwan@sha256:index', 'v26.9.1'],
+                                   'example.invalid/iwan@sha256:index', expected_version],
                                   env=env, text=True, capture_output=True, timeout=10)
 
     def test_each_architecture_uses_its_own_child_digest(self):
-        manifests = [dict(platform=dict(os='linux', architecture=arch), digest=f'sha256:{arch}')
-                     for arch in ('amd64', 'arm64')]
+        manifests = platform_manifests()
         manifests.append(dict(platform=dict(os='unknown', architecture='unknown'), digest='sha256:attestation'))
         result = self.run_smoke(manifests)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.count('PASS linux/'), 2)
+
+    def test_optional_v_in_expected_and_actual_versions(self):
+        for expected in (VERSION, f'v{VERSION}'):
+            for actual in (f'iwan-client-oidc {VERSION}', f'iwan-client-oidc v{VERSION}'):
+                with self.subTest(expected=expected, actual=actual):
+                    result = self.run_smoke(
+                        platform_manifests(),
+                        versions={arch: actual for arch in PLATFORMS},
+                        expected_version=expected)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.count('PASS linux/'), 2)
+
+    def test_architectures_can_use_different_v_formats(self):
+        result = self.run_smoke(
+            platform_manifests(),
+            versions={'amd64': f'iwan-client-oidc v{VERSION}',
+                      'arm64': f'iwan-client-oidc {VERSION}'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count('PASS linux/'), 2)
+
+    def test_wrong_version_or_extra_output_is_rejected_on_either_architecture(self):
+        for arch in PLATFORMS:
+            for actual in (
+                    'iwan-client-oidc 26.11.0',
+                    'iwan-client-oidc v26.11.0',
+                    'iwan-client-oidc 26.11.10',
+                    'iwan-client-oidc v26.11.10',
+                    f'iwan-client-oidc vv{VERSION}',
+                    f'iwan-client-oidc V{VERSION}',
+                    f'iwan-client-oidc {VERSION}-rc.1',
+                    f'iwan-client-oidc {VERSION} extra',
+                    f'iwan-client-oidc  {VERSION}',
+                    f'iwan-client-oidc {VERSION} ',
+                    f'other-client {VERSION}',
+                    f'prefix iwan-client-oidc {VERSION}',
+                    f'iwan-client-oidc {VERSION}\nextra',
+                    ''):
+                with self.subTest(arch=arch, actual=actual):
+                    versions = {key: f'iwan-client-oidc {VERSION}' for key in PLATFORMS}
+                    versions[arch] = actual
+                    result = self.run_smoke(platform_manifests(), versions=versions)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f'Unexpected linux/{arch} client version:', result.stderr)
+
+    def test_version_command_failure_is_not_hidden(self):
+        result = self.run_smoke(platform_manifests(), version_status=42)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('PASS linux/', result.stdout)
 
     def test_missing_architecture_fails(self):
         result = self.run_smoke([])
