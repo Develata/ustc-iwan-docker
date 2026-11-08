@@ -98,11 +98,9 @@ jobs:
           echo "arm64 SHA-256: $sha_arm64"
 
       - name: Set up QEMU
-        if: steps.exists.outputs.exists != 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: steps.exists.outputs.exists != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build and publish immutable version plus stable
@@ -137,3 +135,19 @@ jobs:
           PUBLISHED_IMAGE: ghcr.io/develata/ustc-iwan-docker@${{ steps.image.outputs.digest }}
           UPSTREAM_VERSION: ${{ steps.release.outputs.version }}
         run: sh scripts/smoke-image.sh "$PUBLISHED_IMAGE" "$UPSTREAM_VERSION"
+
+      - name: Verify existing immutable version on both architectures
+        if: steps.exists.outputs.exists == 'true'
+        shell: bash
+        env:
+          UPSTREAM_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          # A previous run may have pushed tags before its smoke test failed.
+          # Recheck existing versioned images instead of silently skipping them.
+          digest="$(docker buildx imagetools inspect "${IMAGE}:${UPSTREAM_VERSION}" | awk '$1 == "Digest:" { print $2; exit }')"
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Could not resolve the immutable image index digest." >&2
+            exit 1
+          fi
+          sh scripts/smoke-image.sh "${IMAGE}@${digest}" "$UPSTREAM_VERSION"
