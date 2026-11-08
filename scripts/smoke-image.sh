@@ -32,7 +32,7 @@ for platform in linux/amd64 linux/arm64; do
             ;;
     esac
     help="$(docker run --rm --platform "$platform" "$platform_image" --help)"
-    for flag in --config-dir --fetch --list --connect --socks --socks-listen --socks-mtu; do
+    for flag in --config-dir --fetch --list --connect --server --socks --socks-listen --socks-mtu; do
         case "$help" in
             *"$flag"*) ;;
             *) printf 'Missing upstream option: %s\n' "$flag" >&2; exit 1 ;;

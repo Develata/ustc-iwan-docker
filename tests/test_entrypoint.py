@@ -101,5 +101,35 @@ cp "$FIXTURE_DIR/asset.zip" "$output"
                 self.assertNotIn(f'iwan-client-oidc-{arch}-musl', text)
 
 
+    def test_run_passes_server_selection_without_stdin(self):
+        # A backgrounded Docker service has no interactive stdin. The upstream
+        # client supports --server, so never send the selection via heredoc.
+        self.fixture()
+        payload = (
+            b'#!/bin/sh\n'
+            b'printf "%s\\n" "$@" > "$FIXTURE_DIR/client-args"\n'
+        )
+        with zipfile.ZipFile(self.work / 'asset.zip', 'w') as archive:
+            archive.writestr('iwan-client-oidc-linux-x86_64-musl', payload)
+        self.env['IWAN_SHA256_AMD64'] = hashlib.sha256(payload).hexdigest()
+
+        config_dir = Path(self.env['IWAN_CONFIG_DIR'])
+        config_dir.mkdir(parents=True)
+        (config_dir / 'servers.json').write_text('{}')
+        self.env['IWAN_SERVER_INDEX'] = '3'
+        self.env['IWAN_STARTUP_GRACE'] = '0.3'
+
+        result = subprocess.run(
+            ['sh', str(ROOT / 'entrypoint.sh'), 'run'],
+            env=self.env, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = (self.work / 'client-args').read_text().splitlines()
+        self.assertEqual(args, [
+            '--config-dir', str(config_dir), '--connect', '--server', '3',
+            '--socks', '--socks-listen', '0.0.0.0:1080',
+            '--socks-mtu', '1380',
+        ])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -44,7 +44,7 @@ case "$1" in
             --version)
                 printf '%s%s' "$version" "$FIXTURE_VERSION_ENDING"
                 exit "$FIXTURE_VERSION_STATUS" ;;
-            --help) printf '%s\\n' '--config-dir --fetch --list --connect --socks --socks-listen --socks-mtu' ;;
+            --help) printf '%s\\n' '--config-dir --fetch --list --connect --server --socks --socks-listen --socks-mtu' ;;
             *) exit 98 ;;
         esac ;;
     *) exit 97 ;;

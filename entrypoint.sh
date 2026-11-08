@@ -129,11 +129,10 @@ run_proxy() {
     "$BIN" \
         --config-dir "$CONFIG_DIR" \
         --connect \
+        --server "$SERVER_INDEX" \
         --socks \
         --socks-listen "$SOCKS_LISTEN" \
-        --socks-mtu "$SOCKS_MTU" <<EOF &
-${SERVER_INDEX}
-EOF
+        --socks-mtu "$SOCKS_MTU" &
     child_pid=$!
 
     sleep "$STARTUP_GRACE"
