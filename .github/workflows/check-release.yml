@@ -145,7 +145,9 @@ jobs:
           set -euo pipefail
           # A previous run may have pushed tags before its smoke test failed.
           # Recheck existing versioned images instead of silently skipping them.
-          digest="$(docker buildx imagetools inspect "${IMAGE}:${UPSTREAM_VERSION}" | awk '$1 == "Digest:" { print $2; exit }')"
+          # Read all Buildx output before parsing to avoid a broken pipe under pipefail.
+          inspect="$(docker buildx imagetools inspect "${IMAGE}:${UPSTREAM_VERSION}")"
+          digest="$(awk '/^Digest:[[:space:]]/ { count++; digest=$2 } END { if (count == 1) print digest }' <<<"$inspect")"
           if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "Could not resolve the immutable image index digest." >&2
             exit 1
